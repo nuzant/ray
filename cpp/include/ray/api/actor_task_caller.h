@@ -1,6 +1,7 @@
 
 #pragma once
 
+#include <ray/api/object_ref.h>
 #include "ray/core.h"
 
 namespace ray {
@@ -12,7 +13,7 @@ class ActorTaskCaller {
   ActorTaskCaller();
 
   ActorTaskCaller(RayRuntime *runtime, ActorID id, RemoteFunctionPtrHolder ptr,
-                  std::shared_ptr<msgpack::sbuffer> args);
+                  std::vector<std::unique_ptr<::ray::TaskArg>> &&args);
 
   ObjectRef<ReturnType> Remote();
 
@@ -20,7 +21,7 @@ class ActorTaskCaller {
   RayRuntime *runtime_;
   ActorID id_;
   RemoteFunctionPtrHolder ptr_;
-  std::shared_ptr<msgpack::sbuffer> args_;
+  std::vector<std::unique_ptr<::ray::TaskArg>> args_;
 };
 
 // ---------- implementation ----------
@@ -29,10 +30,10 @@ template <typename ReturnType>
 ActorTaskCaller<ReturnType>::ActorTaskCaller() {}
 
 template <typename ReturnType>
-ActorTaskCaller<ReturnType>::ActorTaskCaller(RayRuntime *runtime, ActorID id,
-                                             RemoteFunctionPtrHolder ptr,
-                                             std::shared_ptr<msgpack::sbuffer> args)
-    : runtime_(runtime), id_(id), ptr_(ptr), args_(args) {}
+ActorTaskCaller<ReturnType>::ActorTaskCaller(
+    RayRuntime *runtime, ActorID id, RemoteFunctionPtrHolder ptr,
+    std::vector<std::unique_ptr<::ray::TaskArg>> &&args)
+    : runtime_(runtime), id_(id), ptr_(ptr), args_(std::move(args)) {}
 
 template <typename ReturnType>
 ObjectRef<ReturnType> ActorTaskCaller<ReturnType>::Remote() {

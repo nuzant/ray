@@ -40,7 +40,7 @@ def rollout_test(algo, env="CartPole-v0", test_episode_rollout=False):
                   "}' --stop='{\"training_iteration\": 1}'" +
                   " --env={}".format(env))
 
-        checkpoint_path = os.popen("ls {}/default/*/checkpoint_1/"
+        checkpoint_path = os.popen("ls {}/default/*/checkpoint_000001/"
                                    "checkpoint-1".format(tmp_dir)).read()[:-1]
         if not os.path.exists(checkpoint_path):
             sys.exit(1)
@@ -170,7 +170,7 @@ def learn_test_multi_agent_plus_rollout(algo):
                 "policy_mapping_fn": policy_fn,
             },
         }
-        stop = {"episode_reward_mean": 190.0}
+        stop = {"episode_reward_mean": 180.0}
         tune.run(
             algo,
             config=config,

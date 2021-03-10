@@ -1,6 +1,6 @@
 import logging
-
 import numpy as np
+
 from ray.rllib.utils.sgd import standardized
 from ray.rllib.agents import with_common_config
 from ray.rllib.agents.maml.maml_tf_policy import MAMLTFPolicy
@@ -11,8 +11,9 @@ from ray.rllib.execution.common import STEPS_SAMPLED_COUNTER, \
     STEPS_TRAINED_COUNTER, LEARNER_INFO, _get_shared_metrics
 from ray.rllib.policy.sample_batch import SampleBatch
 from ray.rllib.execution.metric_ops import CollectMetrics
-from ray.util.iter import from_actors
 from ray.rllib.evaluation.metrics import collect_metrics
+from ray.rllib.utils.deprecation import DEPRECATED_VALUE
+from ray.util.iter import from_actors
 
 logger = logging.getLogger(__name__)
 
@@ -28,10 +29,14 @@ DEFAULT_CONFIG = with_common_config({
     "kl_coeff": 0.0005,
     # Size of batches collected from each worker
     "rollout_fragment_length": 200,
+    # Do create an actual env on the local worker (worker-idx=0).
+    "create_env_on_driver": True,
     # Stepsize of SGD
     "lr": 1e-3,
-    # Share layers for value function
-    "vf_share_layers": False,
+    "model": {
+        # Share layers for value function.
+        "vf_share_layers": False,
+    },
     # Coefficient of the value function loss
     "vf_loss_coeff": 0.5,
     # Coefficient of the entropy regularizer
@@ -57,6 +62,12 @@ DEFAULT_CONFIG = with_common_config({
     "inner_lr": 0.1,
     # Use Meta Env Template
     "use_meta_env": True,
+
+    # Deprecated keys:
+    # Share layers for value function. If you set this to True, it's important
+    # to tune vf_loss_coeff.
+    # Use config.model.vf_share_layers instead.
+    "vf_share_layers": DEPRECATED_VALUE,
 })
 # __sphinx_doc_end__
 # yapf: enable
@@ -208,16 +219,21 @@ def get_policy_class(config):
 
 
 def validate_config(config):
+    if config["num_gpus"] > 1:
+        raise ValueError("`num_gpus` > 1 not yet supported for MAML!")
     if config["inner_adaptation_steps"] <= 0:
-        raise ValueError("Inner Adaptation Steps must be >=1.")
+        raise ValueError("Inner Adaptation Steps must be >=1!")
     if config["maml_optimizer_steps"] <= 0:
-        raise ValueError("PPO steps for meta-update needs to be >=0")
+        raise ValueError("PPO steps for meta-update needs to be >=0!")
     if config["entropy_coeff"] < 0:
-        raise ValueError("entropy_coeff must be >=0")
+        raise ValueError("`entropy_coeff` must be >=0.0!")
     if config["batch_mode"] != "complete_episodes":
-        raise ValueError("truncate_episodes not supported")
+        raise ValueError("`batch_mode`=truncate_episodes not supported!")
     if config["num_workers"] <= 0:
-        raise ValueError("Must have at least 1 worker/task.")
+        raise ValueError("Must have at least 1 worker/task!")
+    if config["create_env_on_driver"] is False:
+        raise ValueError("Must have an actual Env created on the driver "
+                         "(local) worker! Set `create_env_on_driver` to True.")
 
 
 MAMLTrainer = build_trainer(

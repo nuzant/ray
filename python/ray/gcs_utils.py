@@ -1,6 +1,5 @@
 from ray.core.generated.common_pb2 import ErrorType
 from ray.core.generated.gcs_pb2 import (
-    ActorCheckpointIdData,
     ActorTableData,
     GcsNodeInfo,
     AvailableResources,
@@ -8,13 +7,15 @@ from ray.core.generated.gcs_pb2 import (
     JobConfig,
     ErrorTableData,
     GcsEntry,
-    HeartbeatBatchTableData,
-    HeartbeatTableData,
+    ResourceUsageBatchData,
+    ResourcesData,
     ObjectTableData,
     ProfileTableData,
     TablePrefix,
     TablePubsub,
     TaskTableData,
+    ResourceDemand,
+    ResourceLoad,
     ResourceMap,
     ResourceTableData,
     ObjectLocationInfo,
@@ -24,7 +25,6 @@ from ray.core.generated.gcs_pb2 import (
 )
 
 __all__ = [
-    "ActorCheckpointIdData",
     "ActorTableData",
     "GcsNodeInfo",
     "AvailableResources",
@@ -33,13 +33,15 @@ __all__ = [
     "ErrorTableData",
     "ErrorType",
     "GcsEntry",
-    "HeartbeatBatchTableData",
-    "HeartbeatTableData",
+    "ResourceUsageBatchData",
+    "ResourcesData",
     "ObjectTableData",
     "ProfileTableData",
     "TablePrefix",
     "TablePubsub",
     "TaskTableData",
+    "ResourceDemand",
+    "ResourceLoad",
     "ResourceMap",
     "ResourceTableData",
     "construct_error_message",
@@ -53,8 +55,8 @@ FUNCTION_PREFIX = "RemoteFunction:"
 LOG_FILE_CHANNEL = "RAY_LOG_CHANNEL"
 REPORTER_CHANNEL = "RAY_REPORTER"
 
-# xray heartbeats
-XRAY_HEARTBEAT_BATCH_PATTERN = "HEARTBEAT_BATCH:".encode("ascii")
+# xray resource usages
+XRAY_RESOURCES_BATCH_PATTERN = "RESOURCES_BATCH:".encode("ascii")
 
 # xray job updates
 XRAY_JOB_PATTERN = "JOB:*".encode("ascii")

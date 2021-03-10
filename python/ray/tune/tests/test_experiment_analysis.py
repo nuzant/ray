@@ -8,12 +8,20 @@ from numpy import nan
 
 import ray
 from ray import tune
-from ray.tune.examples.async_hyperband_example import MyTrainableClass
+from ray.tune.utils.mock import MyTrainableClass
 
 
 class ExperimentAnalysisSuite(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        ray.init(
+            num_cpus=4, num_gpus=0, local_mode=True, include_dashboard=False)
+
+    @classmethod
+    def tearDownClass(cls):
+        ray.shutdown()
+
     def setUp(self):
-        ray.init(local_mode=False)
         self.test_dir = tempfile.mkdtemp()
         self.test_name = "analysis_exp"
         self.num_samples = 10
@@ -23,7 +31,6 @@ class ExperimentAnalysisSuite(unittest.TestCase):
 
     def tearDown(self):
         shutil.rmtree(self.test_dir, ignore_errors=True)
-        ray.shutdown()
 
     def run_test_exp(self):
         self.ea = tune.run(
@@ -101,14 +108,15 @@ class ExperimentAnalysisSuite(unittest.TestCase):
         best_trial = self.ea.get_best_trial(self.metric, mode="max")
         checkpoints_metrics = self.ea.get_trial_checkpoints_paths(best_trial)
         logdir = self.ea.get_best_logdir(self.metric, mode="max")
-        expected_path = os.path.join(logdir, "checkpoint_1", "checkpoint")
+        expected_path = os.path.join(logdir, "checkpoint_000001", "checkpoint")
         assert checkpoints_metrics[0][0] == expected_path
         assert checkpoints_metrics[0][1] == 1
 
     def testGetTrialCheckpointsPathsByPath(self):
         logdir = self.ea.get_best_logdir(self.metric, mode="max")
         checkpoints_metrics = self.ea.get_trial_checkpoints_paths(logdir)
-        expected_path = os.path.join(logdir, "checkpoint_1/", "checkpoint")
+        expected_path = os.path.join(logdir, "checkpoint_000001/",
+                                     "checkpoint")
         assert checkpoints_metrics[0][0] == expected_path
         assert checkpoints_metrics[0][1] == 1
 
@@ -116,7 +124,7 @@ class ExperimentAnalysisSuite(unittest.TestCase):
         best_trial = self.ea.get_best_trial(self.metric, mode="max")
         paths = self.ea.get_trial_checkpoints_paths(best_trial, self.metric)
         logdir = self.ea.get_best_logdir(self.metric, mode="max")
-        expected_path = os.path.join(logdir, "checkpoint_1", "checkpoint")
+        expected_path = os.path.join(logdir, "checkpoint_000001", "checkpoint")
         assert paths[0][0] == expected_path
         assert paths[0][1] == best_trial.metric_analysis[self.metric]["last"]
 
@@ -124,7 +132,7 @@ class ExperimentAnalysisSuite(unittest.TestCase):
         best_trial = self.ea.get_best_trial(self.metric, mode="max")
         logdir = self.ea.get_best_logdir(self.metric, mode="max")
         paths = self.ea.get_trial_checkpoints_paths(best_trial, self.metric)
-        expected_path = os.path.join(logdir, "checkpoint_1", "checkpoint")
+        expected_path = os.path.join(logdir, "checkpoint_000001", "checkpoint")
         assert paths[0][0] == expected_path
         assert paths[0][1] == best_trial.metric_analysis[self.metric]["last"]
 

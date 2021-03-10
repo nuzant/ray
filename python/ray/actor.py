@@ -1,6 +1,7 @@
 import inspect
 import logging
 import weakref
+import _thread
 
 import ray.ray_constants as ray_constants
 import ray._raylet
@@ -11,11 +12,20 @@ from ray.util.placement_group import (
 
 from ray import ActorClassID, Language
 from ray._raylet import PythonFunctionDescriptor
+from ray._private.client_mode_hook import client_mode_hook
+from ray._private.client_mode_hook import client_mode_should_convert
+from ray._private.client_mode_hook import client_mode_convert_actor
 from ray import cross_language
+from ray.util.inspect import (
+    is_function_or_method,
+    is_class_method,
+    is_static_method,
+)
 
 logger = logging.getLogger(__name__)
 
 
+@client_mode_hook
 def method(*args, **kwargs):
     """Annotate an actor method.
 
@@ -172,7 +182,7 @@ class ActorClassMethodMetadata(object):
             each actor method.
     """
 
-    _cache = {}  # This cache will be cleared in ray.disconnect()
+    _cache = {}  # This cache will be cleared in ray.worker.disconnect()
 
     def __init__(self):
         class_name = type(self).__name__
@@ -195,7 +205,7 @@ class ActorClassMethodMetadata(object):
         self = cls.__new__(cls)
 
         actor_methods = inspect.getmembers(modified_class,
-                                           ray.utils.is_function_or_method)
+                                           is_function_or_method)
         self.methods = dict(actor_methods)
 
         # Extract the signatures of each of the methods. This will be used
@@ -208,9 +218,8 @@ class ActorClassMethodMetadata(object):
             # Whether or not this method requires binding of its first
             # argument. For class and static methods, we do not want to bind
             # the first argument, but we do for instance methods
-            is_bound = (ray.utils.is_class_method(method)
-                        or ray.utils.is_static_method(modified_class,
-                                                      method_name))
+            is_bound = (is_class_method(method)
+                        or is_static_method(modified_class, method_name))
 
             # Print a warning message if the method signature is not
             # supported. We don't raise an exception because if the actor
@@ -418,7 +427,8 @@ class ActorClass:
                 lifetime=None,
                 placement_group=None,
                 placement_group_bundle_index=-1,
-                placement_group_capture_child_tasks=None):
+                placement_group_capture_child_tasks=None,
+                override_environment_variables=None):
         """Configures and overrides the actor instantiation parameters.
 
         The arguments are the same as those that can be passed
@@ -458,7 +468,9 @@ class ActorClass:
                     placement_group=placement_group,
                     placement_group_bundle_index=placement_group_bundle_index,
                     placement_group_capture_child_tasks=(
-                        placement_group_capture_child_tasks))
+                        placement_group_capture_child_tasks),
+                    override_environment_variables=(
+                        override_environment_variables))
 
         return ActorOptionWrapper()
 
@@ -478,7 +490,8 @@ class ActorClass:
                 lifetime=None,
                 placement_group=None,
                 placement_group_bundle_index=-1,
-                placement_group_capture_child_tasks=None):
+                placement_group_capture_child_tasks=None,
+                override_environment_variables=None):
         """Create an actor.
 
         This method allows more flexibility than the remote method because
@@ -515,6 +528,9 @@ class ActorClass:
             placement_group_capture_child_tasks: Whether or not children tasks
                 of this actor should implicitly use the same placement group
                 as its parent. It is True by default.
+            override_environment_variables: Environment variables to override
+                and/or introduce for this actor.  This is a dictionary mapping
+                variable names to their values.
 
         Returns:
             A handle to the newly created actor.
@@ -538,6 +554,29 @@ class ActorClass:
 
         if max_concurrency < 1:
             raise ValueError("max_concurrency must be >= 1")
+
+        if client_mode_should_convert():
+            return client_mode_convert_actor(
+                self,
+                args,
+                kwargs,
+                num_cpus=num_cpus,
+                num_gpus=num_gpus,
+                memory=memory,
+                object_store_memory=object_store_memory,
+                resources=resources,
+                accelerator_type=accelerator_type,
+                max_concurrency=max_concurrency,
+                max_restarts=max_restarts,
+                max_task_retries=max_task_retries,
+                name=name,
+                lifetime=lifetime,
+                placement_group=placement_group,
+                placement_group_bundle_index=placement_group_bundle_index,
+                placement_group_capture_child_tasks=(
+                    placement_group_capture_child_tasks),
+                override_environment_variables=(
+                    override_environment_variables))
 
         worker = ray.worker.global_worker
         worker.check_connected()
@@ -570,7 +609,9 @@ class ActorClass:
         elif lifetime == "detached":
             detached = True
         else:
-            raise ValueError("lifetime must be either `None` or 'detached'")
+            raise ValueError(
+                "actor `lifetime` argument must be either `None` or 'detached'"
+            )
 
         if placement_group_capture_child_tasks is None:
             placement_group_capture_child_tasks = (
@@ -661,7 +702,9 @@ class ActorClass:
             placement_group_bundle_index,
             placement_group_capture_child_tasks,
             # Store actor_method_cpu in actor handle's extension data.
-            extension_data=str(actor_method_cpu))
+            extension_data=str(actor_method_cpu),
+            override_environment_variables=override_environment_variables
+            or dict())
 
         actor_handle = ActorHandle(
             meta.language,
@@ -919,7 +962,7 @@ class ActorHandle:
     def __reduce__(self):
         """This code path is used by pickling but not by Ray forking."""
         state = self._serialization_helper()
-        return ActorHandle._deserialization_helper, (state)
+        return ActorHandle._deserialization_helper, state
 
 
 def modify_class(cls):
@@ -947,7 +990,7 @@ def modify_class(cls):
     Class.__module__ = cls.__module__
     Class.__name__ = cls.__name__
 
-    if not ray.utils.is_function_or_method(getattr(Class, "__init__", None)):
+    if not is_function_or_method(getattr(Class, "__init__", None)):
         # Add __init__ if it does not exist.
         # Actor creation will be executed with __init__ together.
 
@@ -993,6 +1036,7 @@ def exit_actor():
     """Intentionally exit the current actor.
 
     This function is used to disconnect an actor and exit the worker.
+    Any ``atexit`` handlers installed in the actor will be run.
 
     Raises:
         Exception: An exception is raised if this is a driver or this
@@ -1002,9 +1046,17 @@ def exit_actor():
     if worker.mode == ray.WORKER_MODE and not worker.actor_id.is_nil():
         # Intentionally disconnect the core worker from the raylet so the
         # raylet won't push an error message to the driver.
-        ray.disconnect()
+        ray.worker.disconnect()
         # Disconnect global state from GCS.
         ray.state.state.disconnect()
+
+        # In asyncio actor mode, we can't raise SystemExit because it will just
+        # quit the asycnio event loop thread, not the main thread. Instead, we
+        # raise an interrupt signal to the main thread to tell it to exit.
+        if worker.core_worker.current_actor_is_asyncio():
+            _thread.interrupt_main()
+            return
+
         # Set a flag to indicate this is an intentional actor exit. This
         # reduces log verbosity.
         exit = SystemExit(0)

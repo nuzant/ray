@@ -196,12 +196,32 @@ Histogram
 .. autoclass:: ray.util.metrics.Histogram
    :members:
 
+.. _runtime-context-apis:
+
+Runtime Context APIs
+--------------------
+
+.. autofunction:: ray.runtime_context.get_runtime_context
+
+.. autoclass:: ray.runtime_context.RuntimeContext
+    :members:
+
+.. _package-ref-debugging-apis:
+
+Debugging APIs
+--------------
+
+.. autofunction:: ray.util.pdb.set_trace
+
+.. autofunction:: ray.util.inspect_serializability
+
 Experimental APIs
 -----------------
 
 .. automodule:: ray.experimental
    :members:
 
+.. _ray-cli:
 
 The Ray Command Line API
 ------------------------
@@ -270,4 +290,8 @@ The Ray Command Line API
 
 .. click:: ray.scripts.scripts:timeline
    :prog: ray timeline
+   :show-nested:
+
+.. click:: ray.scripts.scripts:debug
+   :prog: ray debug
    :show-nested:

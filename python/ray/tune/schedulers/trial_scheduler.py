@@ -1,6 +1,7 @@
 from typing import Dict, Optional
 
 from ray.tune import trial_runner
+from ray.tune.result import DEFAULT_METRIC
 from ray.tune.trial import Trial
 
 
@@ -32,6 +33,11 @@ class TrialScheduler:
             return False
         if metric:
             self._metric = metric
+
+        if self._metric is None:
+            # Per default, use anonymous metric
+            self._metric = DEFAULT_METRIC
+
         return True
 
     def on_trial_add(self, trial_runner: "trial_runner.TrialRunner",
@@ -120,11 +126,11 @@ class FIFOScheduler(TrialScheduler):
             self, trial_runner: "trial_runner.TrialRunner") -> Optional[Trial]:
         for trial in trial_runner.get_trials():
             if (trial.status == Trial.PENDING
-                    and trial_runner.has_resources(trial.resources)):
+                    and trial_runner.has_resources_for_trial(trial)):
                 return trial
         for trial in trial_runner.get_trials():
             if (trial.status == Trial.PAUSED
-                    and trial_runner.has_resources(trial.resources)):
+                    and trial_runner.has_resources_for_trial(trial)):
                 return trial
         return None
 

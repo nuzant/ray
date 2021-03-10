@@ -25,7 +25,7 @@ from datetime import datetime
 import mock
 
 
-class ChildClassMock(mock.MagicMock):
+class ChildClassMock(mock.Mock):
     @classmethod
     def __getattr__(cls, name):
         return mock.Mock
@@ -41,9 +41,17 @@ MOCK_MODULES = [
     "horovod",
     "horovod.ray",
     "kubernetes",
+    "mlflow",
     "mxnet",
     "mxnet.model",
     "psutil",
+    "pytorch_lightning.core.step_result",
+    "pytorch_lightning.overrides.data_parallel",
+    "pytorch_lightning.utilities.model_utils",
+    "pytorch_lightning.trainer.model_hooks",
+    "pytorch_lightning.trainer.optimizers",
+    "pytorch_lightning.utilities.exceptions",
+    "pytorch_lightning.utilities.memory",
     "ray._raylet",
     "ray.core.generated",
     "ray.core.generated.common_pb2",
@@ -74,9 +82,9 @@ MOCK_MODULES = [
     "torch.utils.data",
     "torch.utils.data.distributed",
     "wandb",
-    "xgboost",
     "zoopt",
 ]
+
 import scipy.stats
 import scipy.linalg
 
@@ -87,6 +95,33 @@ for mod_name in MOCK_MODULES:
 sys.modules["tensorflow"].VERSION = "9.9.9"
 sys.modules["tensorflow.keras.callbacks"] = ChildClassMock()
 sys.modules["pytorch_lightning"] = ChildClassMock()
+sys.modules["xgboost"] = ChildClassMock()
+sys.modules["xgboost.core"] = ChildClassMock()
+sys.modules["xgboost.callback"] = ChildClassMock()
+
+
+class SimpleClass(object):
+    pass
+
+
+class SimpleClass2(object):
+    pass
+
+
+# ray.util.sgd.torch.lightning_operator.LightningOperator extends
+# TrainingOperator, pytorch_lightning.TrainerOptimizersMixin,
+# and pytorch_lightning.TrainerModelHooksMixin.
+# But, we are mocking all pytorch_lightning modules, causing the ptl base
+# classes to have a different metaclass than TrainingOperator.
+# To fix this, we replace the base classes with dummy classes that extend
+# object.
+# We have to create 2 dummy classes, one for TrainerOptimizersMixin and one
+# for TrainerModelHooksMixin so that we don't extend from the same base
+# class twice.
+setattr(sys.modules["pytorch_lightning.trainer.optimizers"],
+        "TrainerOptimizersMixin", SimpleClass)
+setattr(sys.modules["pytorch_lightning.trainer.model_hooks"],
+        "TrainerModelHooksMixin", SimpleClass2)
 
 # If extensions (or modules to document with autodoc) are in another directory,
 # add these directories to sys.path here. If the directory is relative to the
@@ -113,16 +148,13 @@ extensions = [
     'sphinx_gallery.gen_gallery',
     'sphinxemoji.sphinxemoji',
     'sphinx_copybutton',
+    'sphinxcontrib.yt',
     'versionwarning.extension',
 ]
 
 versionwarning_admonition_type = "tip"
 
 versionwarning_messages = {
-    "master": (
-        "This document is for the master branch. "
-        'Visit the <a href="/en/latest/">latest pip release documentation here</a>.'
-    ),
     "latest": (
         "This document is for the latest pip release. "
         'Visit the <a href="/en/master/">master branch documentation here</a>.'
@@ -137,10 +169,10 @@ sphinx_gallery_conf = {
     "gallery_dirs": ["auto_examples", "tune/tutorials"],
     "ignore_pattern": "../examples/doc_code/",
     "plot_gallery": "False",
+    "min_reported_time": sys.maxsize,
     # "filename_pattern": "tutorial.py",
     # "backreferences_dir": "False",
     # "show_memory': False,
-    # 'min_reported_time': False
 }
 
 for i in range(len(sphinx_gallery_conf["examples_dirs"])):
@@ -446,6 +478,6 @@ def update_context(app, pagename, templatename, context, doctree):
 
 def setup(app):
     app.connect('html-page-context', update_context)
-    app.add_stylesheet('css/custom.css')
+    app.add_css_file('css/custom.css')
     # Custom directives
     app.add_directive('customgalleryitem', CustomGalleryItemDirective)

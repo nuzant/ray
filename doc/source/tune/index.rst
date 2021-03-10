@@ -1,3 +1,5 @@
+.. _tune-main:
+
 Tune: Scalable Hyperparameter Tuning
 ====================================
 
@@ -18,9 +20,6 @@ Tune is a Python library for experiment execution and hyperparameter tuning at a
 .. _`Ray Serve`: serve/index.html
 
 **Want to get started?** Head over to the :doc:`Key Concepts page </tune/key-concepts>`.
-
-.. tip:: Join the `Ray community slack <https://forms.gle/9TSdDYUgxYs8SA9e8>`_ to discuss Ray Tune (and other Ray libraries)!
-
 
 Quick Start
 -----------
@@ -71,7 +70,7 @@ A key problem with machine learning frameworks is the need to restructure all of
 
 With Tune, you can optimize your model just by :ref:`adding a few code snippets <tune-tutorial>`.
 
-Further, Tune actually removes boilerplate from your code training workflow, automatically :ref:`managing checkpoints <tune-checkpoint>` and :ref:`logging results to tools <tune-logging>` such as MLFlow and TensorBoard.
+Further, Tune actually removes boilerplate from your code training workflow, automatically :ref:`managing checkpoints <tune-checkpoint>` and :ref:`logging results to tools <tune-logging>` such as MLflow and TensorBoard.
 
 
 Multi-GPU & distributed training out of the box

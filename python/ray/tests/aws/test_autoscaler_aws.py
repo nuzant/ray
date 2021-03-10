@@ -1,10 +1,14 @@
 import pytest
 
+from ray.autoscaler._private.aws.config import _get_vpc_id_or_die, \
+    bootstrap_aws, \
+    DEFAULT_AMI
 import ray.tests.aws.utils.stubs as stubs
 import ray.tests.aws.utils.helpers as helpers
 from ray.tests.aws.utils.constants import AUX_SUBNET, DEFAULT_SUBNET, \
     DEFAULT_SG_AUX_SUBNET, DEFAULT_SG, DEFAULT_SG_DUAL_GROUP_RULES, \
-    DEFAULT_SG_WITH_RULES_AUX_SUBNET, DEFAULT_SG_WITH_RULES, AUX_SG
+    DEFAULT_SG_WITH_RULES_AUX_SUBNET, AUX_SG, \
+    DEFAULT_SG_WITH_NAME, DEFAULT_SG_WITH_NAME_AND_RULES, CUSTOM_IN_BOUND_RULES
 
 
 def test_create_sg_different_vpc_same_rules(iam_client_stub, ec2_client_stub):
@@ -48,13 +52,6 @@ def test_create_sg_different_vpc_same_rules(iam_client_stub, ec2_client_stub):
         DEFAULT_SG_WITH_RULES_AUX_SUBNET,
     )
 
-    # given the prior modification to the head security group...
-    # expect the next read of a head security group property to reload it
-    stubs.describe_sg_echo(ec2_client_stub, DEFAULT_SG_WITH_RULES)
-    # given the prior modification to the worker security group...
-    # expect the next read of a worker security group property to reload it
-    stubs.describe_sg_echo(ec2_client_stub, DEFAULT_SG_WITH_RULES_AUX_SUBNET)
-
     # given our mocks and an example config file as input...
     # expect the config to be loaded, validated, and bootstrapped successfully
     config = helpers.bootstrap_aws_example_config_file("example-subnets.yaml")
@@ -67,6 +64,102 @@ def test_create_sg_different_vpc_same_rules(iam_client_stub, ec2_client_stub):
     assert config["worker_nodes"]["SubnetIds"] == [AUX_SUBNET["SubnetId"]]
 
     # expect no pending responses left in IAM or EC2 client stub queues
+    iam_client_stub.assert_no_pending_responses()
+    ec2_client_stub.assert_no_pending_responses()
+
+
+def test_create_sg_with_custom_inbound_rules_and_name(iam_client_stub,
+                                                      ec2_client_stub):
+    # use default stubs to skip ahead to security group configuration
+    stubs.skip_to_configure_sg(ec2_client_stub, iam_client_stub)
+
+    # expect to describe the head subnet ID
+    stubs.describe_subnets_echo(ec2_client_stub, DEFAULT_SUBNET)
+    # given no existing security groups within the VPC...
+    stubs.describe_no_security_groups(ec2_client_stub)
+    # expect to create a security group on the head node VPC
+    stubs.create_sg_echo(ec2_client_stub, DEFAULT_SG_WITH_NAME)
+    # expect new head security group details to be retrieved after creation
+    stubs.describe_sgs_on_vpc(
+        ec2_client_stub,
+        [DEFAULT_SUBNET["VpcId"]],
+        [DEFAULT_SG_WITH_NAME],
+    )
+
+    # given custom existing default head security group inbound rules...
+    # expect to authorize both default and custom inbound rules
+    stubs.authorize_sg_ingress(
+        ec2_client_stub,
+        DEFAULT_SG_WITH_NAME_AND_RULES,
+    )
+
+    # given the prior modification to the head security group...
+    # expect the next read of a head security group property to reload it
+    stubs.describe_sg_echo(ec2_client_stub, DEFAULT_SG_WITH_NAME_AND_RULES)
+
+    _get_vpc_id_or_die.cache_clear()
+    # given our mocks and an example config file as input...
+    # expect the config to be loaded, validated, and bootstrapped successfully
+    config = helpers.bootstrap_aws_example_config_file(
+        "example-security-group.yaml")
+
+    # expect the bootstrapped config to have the custom security group...
+    # name and in bound rules
+    assert config["provider"]["security_group"][
+        "GroupName"] == DEFAULT_SG_WITH_NAME_AND_RULES["GroupName"]
+    assert config["provider"]["security_group"][
+        "IpPermissions"] == CUSTOM_IN_BOUND_RULES
+
+    # expect no pending responses left in IAM or EC2 client stub queues
+    iam_client_stub.assert_no_pending_responses()
+    ec2_client_stub.assert_no_pending_responses()
+
+
+def test_subnet_given_head_and_worker_sg(iam_client_stub, ec2_client_stub):
+    stubs.configure_iam_role_default(iam_client_stub)
+    stubs.configure_key_pair_default(ec2_client_stub)
+
+    # list a security group and a thousand subnets in different vpcs
+    stubs.describe_a_security_group(ec2_client_stub, DEFAULT_SG)
+    stubs.describe_a_thousand_subnets_in_different_vpcs(ec2_client_stub)
+
+    config = helpers.bootstrap_aws_example_config_file(
+        "example-head-and-worker-security-group.yaml")
+
+    # check that just the single subnet in the right vpc is filled
+    assert config["head_node"]["SubnetIds"] == [DEFAULT_SUBNET["SubnetId"]]
+    assert config["worker_nodes"]["SubnetIds"] == [DEFAULT_SUBNET["SubnetId"]]
+
+    # expect no pending responses left in IAM or EC2 client stub queues
+    iam_client_stub.assert_no_pending_responses()
+    ec2_client_stub.assert_no_pending_responses()
+
+
+def test_fills_out_amis(iam_client_stub, ec2_client_stub):
+    # Setup stubs to mock out boto3
+    stubs.configure_iam_role_default(iam_client_stub)
+    stubs.configure_key_pair_default(ec2_client_stub)
+    stubs.describe_a_security_group(ec2_client_stub, DEFAULT_SG)
+    stubs.configure_subnet_default(ec2_client_stub)
+
+    config = helpers.load_aws_example_config_file("example-full.yaml")
+    del config["available_node_types"]["ray.head.default"]["node_config"][
+        "ImageId"]
+    del config["available_node_types"]["ray.worker.default"]["node_config"][
+        "ImageId"]
+
+    # Pass in SG for stub to work
+    config["head_node"]["SecurityGroupIds"] = ["sg-1234abcd"]
+    config["worker_nodes"]["SecurityGroupIds"] = ["sg-1234abcd"]
+
+    defaults_filled = bootstrap_aws(config)
+
+    ami = DEFAULT_AMI.get(config.get("provider", {}).get("region"))
+
+    assert defaults_filled["head_node"].get("ImageId") == ami
+
+    assert defaults_filled["worker_nodes"].get("ImageId") == ami
+
     iam_client_stub.assert_no_pending_responses()
     ec2_client_stub.assert_no_pending_responses()
 

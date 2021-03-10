@@ -46,7 +46,13 @@ Hugging Face Transformers |hugging|
 
 State-of-the-art Natural Language Processing for Pytorch and TensorFlow 2.0.
 
+It integrates with Ray for distributed hyperparameter tuning of transformer models:
+
 [`Link to integration <https://huggingface.co/transformers/master/main_classes/trainer.html#transformers.Trainer.hyperparameter_search>`__]
+
+As well as for distributed document retrieval for Retrieval Augmented Generation Models
+
+[`Link to integration <https://github.com/huggingface/transformers/tree/master/examples/research_projects/rag#document-retrieval>`__]
 
 Intel Analytics Zoo |zoo|
 -------------------------
@@ -82,6 +88,13 @@ PyCaret is an open source low-code machine learning library in Python that aims 
 
 GitHub: `https://github.com/pycaret/pycaret <https://github.com/pycaret/pycaret>`_
 
+PyTorch Lightning |ptl|
+-----------------------
+
+PyTorch Lightning is a popular open-source library that provides a high level interface for PyTorch. The goal of PyTorch Lightning is to structure your PyTorch code to abstract the details of training, making AI research scalable and fast to iterate on.
+
+[`Link to integration <https://github.com/ray-project/ray_lightning_accelerators>`__]
+
 RayDP |raydp|
 -------------
 
@@ -96,11 +109,24 @@ Alibi is an open source Python library aimed at machine learning model inspectio
 
 GitHub: `https://github.com/SeldonIO/alibi <https://github.com/SeldonIO/alibi>`__
 
+Scikit Learn |scikit|
+---------------------
+
+Scikit-learn is a free software machine learning library for the Python programming language. It features various classification, regression and clustering algorithms including support vector machines, random forests, gradient boosting, k-means and DBSCAN, and is designed to interoperate with the Python numerical and scientific libraries NumPy and SciPy.
+
+[`Link to integration <https://docs.ray.io/en/master/joblib.html>`__]
+
 Spacy |spacy|
 -------------
 spaCy is a library for advanced Natural Language Processing in Python and Cython. It's built on the very latest research, and was designed from day one to be used in real products.
 
 [`Link to integration <https://pypi.org/project/spacy-ray/>`__]
+
+XGBoost |xgboost|
+-----------------
+XGBoost is a popular gradient boosting library for classification and regression. It is one of the most popular tools in data science and workhorse of many top-performing Kaggle kernels.
+
+[`Link to integration <https://github.com/ray-project/xgboost_ray>`__]
 
 .. |classyvision| image:: images/classyvision.png
     :class: inline-figure
@@ -138,7 +164,15 @@ spaCy is a library for advanced Natural Language Processing in Python and Cython
     :class: inline-figure
     :height: 30
 
+.. |ptl| image:: images/pytorch_lightning_small.png
+    :class: inline-figure
+    :height: 30
+
 .. |raydp| image:: images/intel.png
+    :class: inline-figure
+    :height: 30
+
+.. |scikit| image:: images/scikit.png
     :class: inline-figure
     :height: 30
 
@@ -147,6 +181,10 @@ spaCy is a library for advanced Natural Language Processing in Python and Cython
     :height: 30
 
 .. |spacy| image:: images/spacy.png
+    :class: inline-figure
+    :height: 30
+
+.. |xgboost| image:: images/xgboost_logo.png
     :class: inline-figure
     :height: 30
 

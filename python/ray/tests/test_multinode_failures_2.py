@@ -22,7 +22,6 @@ import ray.ray_constants as ray_constants
             "num_heartbeats_timeout": 10,
             "object_manager_pull_timeout_ms": 1000,
             "object_manager_push_timeout_ms": 1000,
-            "object_manager_repeated_push_delay_ms": 1000,
         },
     }],
     indirect=True)
@@ -127,7 +126,9 @@ def test_driver_lives_sequential(ray_start_regular):
     ray.worker._global_node.kill_raylet()
     ray.worker._global_node.kill_plasma_store()
     ray.worker._global_node.kill_log_monitor()
-    ray.worker._global_node.kill_monitor()
+    if not sys.platform.startswith("win"):
+        # fails on windows.
+        ray.worker._global_node.kill_monitor()
     ray.worker._global_node.kill_gcs_server()
 
     # If the driver can reach the tearDown method, then it is still alive.

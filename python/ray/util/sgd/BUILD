@@ -4,7 +4,7 @@
 # --------------------------------------------------------------------
 py_test(
     name = "test_ptl",
-    size = "small",
+    size = "large",
     srcs = ["tests/test_ptl.py"],
     tags = ["exclusive", "pytorch-lightning", "pytorch"],
     deps = [":sgd_lib"],
@@ -140,14 +140,14 @@ py_test(
     args = ["--smoke-test"]
 )
 
-py_test(
-    name = "dcgan",
-    size = "small",
-    srcs = ["torch/examples/dcgan.py"],
-    tags = ["exclusive", "pytorch"],
-    deps = [":sgd_lib"],
-    args = ["--smoke-test", "--num-workers=2"]
-)
+# py_test(
+#     name = "dcgan",
+#     size = "small",
+#     srcs = ["torch/examples/dcgan.py"],
+#     tags = ["exclusive", "pytorch"],
+#     deps = [":sgd_lib"],
+#     args = ["--smoke-test", "--num-workers=2"]
+# )
 
 py_test(
     name = "raysgd_torch_signatures",
@@ -197,6 +197,16 @@ py_test(
     args = ["--num-workers=2", "--smoke-test"]
 )
 
+py_test(
+    name = "tune_example_3",
+    size = "small",
+    main = "torch/examples/tune_example.py",
+    srcs = ["torch/examples/tune_example.py"],
+    tags = ["exclusive", "pytorch"],
+    deps = [":sgd_lib"],
+    args = ["--num-workers=2", "--smoke-test", "--lr-reduce-on-plateau"]
+)
+
 
 # --------------------------------------------------------------------
 # Tests from the python/ray/util/sgd/torch/examples/* directories.
@@ -222,11 +232,25 @@ py_test(
     args = ["--no-gpu", "--mock-data", "--smoke-test", "--ray-num-workers=2", "--model=mobilenetv3_small_075", "data"]
 )
 
+# py_test(
+#     name = "mnist-ptl",
+#     size = "small",
+#     srcs = ["torch/examples/pytorch-lightning/mnist-ptl.py"],
+#     tags = ["exclusive", "pytorch", "pytorch-lightning"],
+#     deps = [":sgd_lib"],
+#     args = ["--smoke-test"]
+# )
+
+# --------------------------------------------------------------------
+# SGD related tests from the ../../../../release directory.
+# Please keep these sorted alphabetically.
+# --------------------------------------------------------------------
+
 py_test(
-    name = "mnist-ptl",
-    size = "small",
-    srcs = ["torch/examples/pytorch-lightning/mnist-ptl.py"],
-    tags = ["exclusive", "pytorch", "pytorch-lightning"],
+    name = "pytorch_pbt_failure",
+    size = "medium",
+    srcs = ["torch/examples/pytorch_pbt_failure.py"],
+    tags = ["exlusive", "pytorch", "release"],
     deps = [":sgd_lib"],
     args = ["--smoke-test"]
 )

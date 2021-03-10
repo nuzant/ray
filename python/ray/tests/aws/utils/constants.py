@@ -50,6 +50,19 @@ DEFAULT_SUBNET = {
     "VpcId": "vpc-0000000",
 }
 
+
+def subnet_in_vpc(vpc_num):
+    """Returns a copy of DEFAULT_SUBNET whose VpcId ends with the digits
+    of vpc_num."""
+    subnet = copy.copy(DEFAULT_SUBNET)
+    subnet["VpcId"] = f"vpc-{vpc_num:07d}"
+    return subnet
+
+
+A_THOUSAND_SUBNETS_IN_DIFFERENT_VPCS = [
+    subnet_in_vpc(vpc_num) for vpc_num in range(1, 1000)
+] + [DEFAULT_SUBNET]
+
 # Secondary EC2 subnet to expose to tests as required.
 AUX_SUBNET = {
     "AvailabilityZone": "us-west-2a",
@@ -98,10 +111,7 @@ DEFAULT_SG_AUX_SUBNET = copy.deepcopy(DEFAULT_SG)
 DEFAULT_SG_AUX_SUBNET["VpcId"] = AUX_SUBNET["VpcId"]
 DEFAULT_SG_AUX_SUBNET["GroupId"] = AUX_SG["GroupId"]
 
-# Default security group settings once default inbound rules are applied
-# (if used by both head and worker nodes)
-DEFAULT_SG_WITH_RULES = copy.deepcopy(DEFAULT_SG)
-DEFAULT_SG_WITH_RULES["IpPermissions"] = [{
+DEFAULT_IN_BOUND_RULES = [{
     "FromPort": -1,
     "ToPort": -1,
     "IpProtocol": "-1",
@@ -116,6 +126,10 @@ DEFAULT_SG_WITH_RULES["IpPermissions"] = [{
         "CidrIp": "0.0.0.0/0"
     }]
 }]
+# Default security group settings once default inbound rules are applied
+# (if used by both head and worker nodes)
+DEFAULT_SG_WITH_RULES = copy.deepcopy(DEFAULT_SG)
+DEFAULT_SG_WITH_RULES["IpPermissions"] = DEFAULT_IN_BOUND_RULES
 
 # Default security group once default inbound rules are applied
 # (if using separate security groups for head and worker nodes).
@@ -128,3 +142,29 @@ DEFAULT_SG_DUAL_GROUP_RULES["IpPermissions"][0]["UserIdGroupPairs"].append({
 DEFAULT_SG_WITH_RULES_AUX_SUBNET = copy.deepcopy(DEFAULT_SG_DUAL_GROUP_RULES)
 DEFAULT_SG_WITH_RULES_AUX_SUBNET["VpcId"] = AUX_SUBNET["VpcId"]
 DEFAULT_SG_WITH_RULES_AUX_SUBNET["GroupId"] = AUX_SG["GroupId"]
+
+# Default security group with custom name
+DEFAULT_SG_WITH_NAME = copy.deepcopy(DEFAULT_SG)
+DEFAULT_SG_WITH_NAME["GroupName"] = "test_security_group_name"
+
+CUSTOM_IN_BOUND_RULES = [{
+    "FromPort": 443,
+    "ToPort": 443,
+    "IpProtocol": "TCP",
+    "IpRanges": [{
+        "CidrIp": "0.0.0.0/0"
+    }]
+}, {
+    "FromPort": 8265,
+    "ToPort": 8265,
+    "IpProtocol": "TCP",
+    "IpRanges": [{
+        "CidrIp": "0.0.0.0/0"
+    }]
+}]
+
+# Default security group with custom name once...
+# default and custom in bound rules are applied
+DEFAULT_SG_WITH_NAME_AND_RULES = copy.deepcopy(DEFAULT_SG_WITH_NAME)
+DEFAULT_SG_WITH_NAME_AND_RULES[
+    "IpPermissions"] = DEFAULT_IN_BOUND_RULES + CUSTOM_IN_BOUND_RULES

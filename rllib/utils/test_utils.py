@@ -2,8 +2,10 @@ import gym
 import logging
 import numpy as np
 
-from ray.rllib.utils.framework import try_import_tf, try_import_torch
+from ray.rllib.utils.framework import try_import_jax, try_import_tf, \
+    try_import_torch
 
+jax, _ = try_import_jax()
 tf1, tf, tfv = try_import_tf()
 if tf1:
     eager_mode = None
@@ -65,7 +67,10 @@ def framework_iterator(config=None,
             logger.warning(
                 "framework_iterator skipping tf2.x (tf version is < 2.0)!")
             continue
-        assert fw in ["tf2", "tf", "tfe", "torch", None]
+        elif fw == "jax" and not jax:
+            logger.warning("framework_iterator skipping JAX (not installed)!")
+            continue
+        assert fw in ["tf2", "tf", "tfe", "torch", "jax", None]
 
         # Do we need a test session?
         sess = None
@@ -179,7 +184,7 @@ def check(x, y, decimals=5, atol=None, rtol=None, false=False):
     else:
         if tf1 is not None:
             # y should never be a Tensor (y=expected value).
-            if isinstance(y, tf1.Tensor):
+            if isinstance(y, (tf1.Tensor, tf1.Variable)):
                 # In eager mode, numpyize tensors.
                 if tf.executing_eagerly():
                     y = y.numpy()
@@ -187,11 +192,11 @@ def check(x, y, decimals=5, atol=None, rtol=None, false=False):
                     raise ValueError(
                         "`y` (expected value) must not be a Tensor. "
                         "Use numpy.ndarray instead")
-            if isinstance(x, tf1.Tensor):
+            if isinstance(x, (tf1.Tensor, tf1.Variable)):
                 # In eager mode, numpyize tensors.
                 if tf1.executing_eagerly():
                     x = x.numpy()
-                # Otherwise, use a quick tf-session.
+                # Otherwise, use a new tf-session.
                 else:
                     with tf1.Session() as sess:
                         x = sess.run(x)
@@ -243,7 +248,7 @@ def check(x, y, decimals=5, atol=None, rtol=None, false=False):
                         "ERROR: x ({}) is the same as y ({})!".format(x, y)
 
 
-def check_learning_achieved(tune_results, min_reward):
+def check_learning_achieved(tune_results, min_reward, evaluation=False):
     """Throws an error if `min_reward` is not reached within tune_results.
 
     Checks the last iteration found in tune_results for its
@@ -256,7 +261,10 @@ def check_learning_achieved(tune_results, min_reward):
     Raises:
         ValueError: If `min_reward` not reached.
     """
-    if tune_results.trials[0].last_result["episode_reward_mean"] < min_reward:
+    last_result = tune_results.trials[0].last_result
+    avg_reward = last_result["episode_reward_mean"] if not evaluation else \
+        last_result["evaluation"]["episode_reward_mean"]
+    if avg_reward < min_reward:
         raise ValueError("`stop-reward` of {} not reached!".format(min_reward))
     print("ok")
 
@@ -293,12 +301,10 @@ def check_compute_single_action(trainer,
             assert worker_set
             if isinstance(worker_set, list):
                 obs_space = trainer.get_policy().observation_space
-                try:
-                    obs_space = obs_space.original_space
-                except AttributeError:
-                    pass
             else:
-                obs_space = worker_set.local_worker().env.observation_space
+                obs_space = worker_set.local_worker().for_policy(
+                    lambda p: p.observation_space)
+            obs_space = getattr(obs_space, "original_space", obs_space)
         else:
             method_to_test = pol.compute_single_action
             obs_space = pol.observation_space
@@ -312,6 +318,12 @@ def check_compute_single_action(trainer,
                     call_kwargs["clip_actions"] = True
 
                 obs = obs_space.sample()
+                # Framestacking w/ traj. view API.
+                framestacks = pol.config["model"].get("num_framestacks",
+                                                      "auto")
+                if isinstance(framestacks, int) and framestacks > 1:
+                    obs = np.stack(
+                        [obs] * pol.config["model"]["num_framestacks"])
                 if isinstance(obs_space, gym.spaces.Box):
                     obs = np.clip(obs, -1.0, 1.0)
                 state_in = None

@@ -1,13 +1,14 @@
 import logging
 import pickle
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Union
 
-from ray.tune.result import TRAINING_ITERATION
+from ray.tune.result import DEFAULT_METRIC, TRAINING_ITERATION
 from ray.tune.sample import Categorical, Domain, Float, Integer, LogUniform, \
     Quantized, Uniform
+from ray.tune.suggest.suggestion import UNRESOLVED_SEARCH_SPACE, \
+    UNDEFINED_METRIC_MODE, UNDEFINED_SEARCH_SPACE
 from ray.tune.suggest.variant_generator import parse_spec_vars
-from ray.tune.utils import flatten_dict
-from ray.tune.utils.util import unflatten_dict
+from ray.tune.utils.util import flatten_dict, unflatten_dict
 
 try:
     import optuna as ot
@@ -55,10 +56,16 @@ class OptunaSearch(Searcher):
         space (list): Hyperparameter search space definition for Optuna's
             sampler. This is a list, and samples for the parameters will
             be obtained in order.
-        metric (str): Metric that is reported back to Optuna on trial
-            completion.
+        metric (str): The training result objective value attribute. If None
+            but a mode was passed, the anonymous metric `_metric` will be used
+            per default.
         mode (str): One of {min, max}. Determines whether objective is
             minimizing or maximizing the metric attribute.
+        points_to_evaluate (list): Initial parameter suggestions to be run
+            first. This is for when you already have some good parameters
+            you want to run first to help the algorithm make better suggestions
+            for future parameters. Needs to be a list of dicts containing the
+            configurations.
         sampler (optuna.samplers.BaseSampler): Optuna sampler used to
             draw hyperparameter configurations. Defaults to ``TPESampler``.
 
@@ -91,7 +98,7 @@ class OptunaSearch(Searcher):
             param.suggest_uniform("b", 10, 20)
         ]
 
-        algo = OptunaSearch(
+        optuna_search = OptunaSearch(
             space,
             metric="loss",
             mode="min")
@@ -103,9 +110,10 @@ class OptunaSearch(Searcher):
     """
 
     def __init__(self,
-                 space: Optional[List[Tuple]] = None,
+                 space: Optional[Union[Dict, List[Tuple]]] = None,
                  metric: Optional[str] = None,
                  mode: Optional[str] = None,
+                 points_to_evaluate: Optional[List[Dict]] = None,
                  sampler: Optional[BaseSampler] = None):
         assert ot is not None, (
             "Optuna must be installed! Run `pip install optuna`.")
@@ -115,7 +123,17 @@ class OptunaSearch(Searcher):
             max_concurrent=None,
             use_early_stopped_trials=None)
 
+        if isinstance(space, dict) and space:
+            resolved_vars, domain_vars, grid_vars = parse_spec_vars(space)
+            if domain_vars or grid_vars:
+                logger.warning(
+                    UNRESOLVED_SEARCH_SPACE.format(
+                        par="space", cls=type(self)))
+                space = self.convert_search_space(space)
+
         self._space = space
+
+        self._points_to_evaluate = points_to_evaluate or []
 
         self._study_name = "optuna"  # Fixed study name for in-memory storage
         self._sampler = sampler or ot.samplers.TPESampler()
@@ -123,22 +141,29 @@ class OptunaSearch(Searcher):
             "You can only pass an instance of `optuna.samplers.BaseSampler` " \
             "as a sampler to `OptunaSearcher`."
 
-        self._pruner = ot.pruners.NopPruner()
-        self._storage = ot.storages.InMemoryStorage()
-
         self._ot_trials = {}
         self._ot_study = None
         if self._space:
-            self.setup_study(mode)
+            self._setup_study(mode)
 
-    def setup_study(self, mode: str):
+    def _setup_study(self, mode: str):
+        if self._metric is None and self._mode:
+            # If only a mode was passed, use anonymous metric
+            self._metric = DEFAULT_METRIC
+
+        pruner = ot.pruners.NopPruner()
+        storage = ot.storages.InMemoryStorage()
+
         self._ot_study = ot.study.create_study(
-            storage=self._storage,
+            storage=storage,
             sampler=self._sampler,
-            pruner=self._pruner,
+            pruner=pruner,
             study_name=self._study_name,
             direction="minimize" if mode == "min" else "maximize",
             load_if_exists=True)
+
+        for point in self._points_to_evaluate:
+            self._ot_study.enqueue_trial(point)
 
     def set_search_properties(self, metric: Optional[str], mode: Optional[str],
                               config: Dict) -> bool:
@@ -150,22 +175,25 @@ class OptunaSearch(Searcher):
             self._metric = metric
         if mode:
             self._mode = mode
-        self.setup_study(mode)
+
+        self._setup_study(mode)
         return True
 
     def suggest(self, trial_id: str) -> Optional[Dict]:
         if not self._space:
             raise RuntimeError(
-                "Trying to sample a configuration from {}, but no search "
-                "space has been defined. Either pass the `{}` argument when "
-                "instantiating the search algorithm, or pass a `config` to "
-                "`tune.run()`.".format(self.__class__.__name__, "space"))
+                UNDEFINED_SEARCH_SPACE.format(
+                    cls=self.__class__.__name__, space="space"))
+        if not self._metric or not self._mode:
+            raise RuntimeError(
+                UNDEFINED_METRIC_MODE.format(
+                    cls=self.__class__.__name__,
+                    metric=self._metric,
+                    mode=self._mode))
 
         if trial_id not in self._ot_trials:
-            ot_trial_id = self._storage.create_new_trial(
-                self._ot_study._study_id)
-            self._ot_trials[trial_id] = ot.trial.Trial(self._ot_study,
-                                                       ot_trial_id)
+            self._ot_trials[trial_id] = self._ot_study.ask()
+
         ot_trial = self._ot_trials[trial_id]
 
         # getattr will fetch the trial.suggest_ function on Optuna trials
@@ -174,6 +202,7 @@ class OptunaSearch(Searcher):
                 ot_trial, fn)(*args, **kwargs)
             for (fn, args, kwargs) in self._space
         }
+
         return unflatten_dict(params)
 
     def on_trial_result(self, trial_id: str, result: Dict):
@@ -187,27 +216,27 @@ class OptunaSearch(Searcher):
                           result: Optional[Dict] = None,
                           error: bool = False):
         ot_trial = self._ot_trials[trial_id]
-        ot_trial_id = ot_trial._trial_id
-        self._storage.set_trial_value(ot_trial_id, result.get(
-            self.metric, None))
-        self._storage.set_trial_state(ot_trial_id,
-                                      ot.trial.TrialState.COMPLETE)
+
+        val = result.get(self.metric, None) if result else None
+        try:
+            self._ot_study.tell(ot_trial, val)
+        except ValueError as exc:
+            logger.warning(exc)  # E.g. if NaN was reported
 
     def save(self, checkpoint_path: str):
-        save_object = (self._storage, self._pruner, self._sampler,
-                       self._ot_trials, self._ot_study)
+        save_object = (self._sampler, self._ot_trials, self._ot_study,
+                       self._points_to_evaluate)
         with open(checkpoint_path, "wb") as outputFile:
             pickle.dump(save_object, outputFile)
 
     def restore(self, checkpoint_path: str):
         with open(checkpoint_path, "rb") as inputFile:
             save_object = pickle.load(inputFile)
-        self._storage, self._pruner, self._sampler, \
-            self._ot_trials, self._ot_study = save_object
+        self._sampler, self._ot_trials, self._ot_study, \
+            self._points_to_evaluate = save_object
 
     @staticmethod
     def convert_search_space(spec: Dict) -> List[Tuple]:
-        spec = flatten_dict(spec, prevent_delimiter=True)
         resolved_vars, domain_vars, grid_vars = parse_spec_vars(spec)
 
         if not domain_vars and not grid_vars:
@@ -217,6 +246,10 @@ class OptunaSearch(Searcher):
             raise ValueError(
                 "Grid search parameters cannot be automatically converted "
                 "to an Optuna search space.")
+
+        # Flatten and resolve again after checking for grid search.
+        spec = flatten_dict(spec, prevent_delimiter=True)
+        resolved_vars, domain_vars, grid_vars = parse_spec_vars(spec)
 
         def resolve_value(par: str, domain: Domain) -> Tuple:
             quantize = None

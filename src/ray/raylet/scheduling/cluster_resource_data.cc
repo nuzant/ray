@@ -1,8 +1,8 @@
 #include "ray/raylet/scheduling/cluster_resource_data.h"
 
-const std::string resource_labels[] = {ray::kCPU_ResourceLabel,
-                                       ray::kMemory_ResourceLabel,
-                                       ray::kGPU_ResourceLabel, ray::kTPU_ResourceLabel};
+const std::string resource_labels[] = {
+    ray::kCPU_ResourceLabel, ray::kMemory_ResourceLabel, ray::kGPU_ResourceLabel,
+    ray::kObjectStoreMemory_ResourceLabel};
 
 const std::string ResourceEnumToString(PredefinedResources resource) {
   // TODO (Alex): We should replace this with a protobuf enum.
@@ -62,8 +62,6 @@ std::vector<double> VectorFixedPointToVectorDouble(
 TaskRequest ResourceMapToTaskRequest(
     StringIdMap &string_to_int_map,
     const std::unordered_map<std::string, double> &resource_map) {
-  size_t i = 0;
-
   TaskRequest task_request;
 
   task_request.predefined_resources.resize(PredefinedResources_MAX);
@@ -73,17 +71,19 @@ TaskRequest ResourceMapToTaskRequest(
     task_request.predefined_resources[0].soft = false;
   }
 
+  size_t i = 0;
   for (auto const &resource : resource_map) {
     if (resource.first == ray::kCPU_ResourceLabel) {
       task_request.predefined_resources[CPU].demand = resource.second;
     } else if (resource.first == ray::kGPU_ResourceLabel) {
       task_request.predefined_resources[GPU].demand = resource.second;
-    } else if (resource.first == ray::kTPU_ResourceLabel) {
-      task_request.predefined_resources[TPU].demand = resource.second;
+    } else if (resource.first == ray::kObjectStoreMemory_ResourceLabel) {
+      task_request.predefined_resources[OBJECT_STORE_MEM].demand = resource.second;
     } else if (resource.first == ray::kMemory_ResourceLabel) {
       task_request.predefined_resources[MEM].demand = resource.second;
     } else {
-      task_request.custom_resources[i].id = string_to_int_map.Insert(resource.first);
+      string_to_int_map.Insert(resource.first);
+      task_request.custom_resources[i].id = string_to_int_map.Get(resource.first);
       task_request.custom_resources[i].demand = resource.second;
       task_request.custom_resources[i].soft = false;
       i++;
@@ -151,8 +151,8 @@ NodeResources ResourceMapToNodeResources(
       node_resources.predefined_resources[CPU] = resource_capacity;
     } else if (resource.first == ray::kGPU_ResourceLabel) {
       node_resources.predefined_resources[GPU] = resource_capacity;
-    } else if (resource.first == ray::kTPU_ResourceLabel) {
-      node_resources.predefined_resources[TPU] = resource_capacity;
+    } else if (resource.first == ray::kObjectStoreMemory_ResourceLabel) {
+      node_resources.predefined_resources[OBJECT_STORE_MEM] = resource_capacity;
     } else if (resource.first == ray::kMemory_ResourceLabel) {
       node_resources.predefined_resources[MEM] = resource_capacity;
     } else {
@@ -195,6 +195,8 @@ bool NodeResources::operator==(const NodeResources &other) {
   return true;
 }
 
+bool NodeResources::operator!=(const NodeResources &other) { return !(*this == other); }
+
 std::string NodeResources::DebugString(StringIdMap string_to_in_map) const {
   std::stringstream buffer;
   buffer << " {\n";
@@ -210,8 +212,8 @@ std::string NodeResources::DebugString(StringIdMap string_to_in_map) const {
     case GPU:
       buffer << "GPU: ";
       break;
-    case TPU:
-      buffer << "TPU: ";
+    case OBJECT_STORE_MEM:
+      buffer << "OBJECT_STORE_MEM: ";
       break;
     default:
       RAY_CHECK(false) << "This should never happen.";
@@ -224,6 +226,60 @@ std::string NodeResources::DebugString(StringIdMap string_to_in_map) const {
        ++it) {
     buffer << "\t" << string_to_in_map.Get(it->first) << ":(" << it->second.total << ":"
            << it->second.available << ")\n";
+  }
+  buffer << "}" << std::endl;
+  return buffer.str();
+}
+
+const std::string format_resource(std::string resource_name, double quantity) {
+  if (resource_name == "object_store_memory" || resource_name == "memory") {
+    return std::to_string(quantity / (1024 * 1024 * 1024)) + " GiB";
+  }
+  return std::to_string(quantity);
+}
+
+std::string NodeResources::DictString(StringIdMap string_to_in_map) const {
+  std::stringstream buffer;
+  bool first = true;
+  buffer << "{";
+  for (size_t i = 0; i < this->predefined_resources.size(); i++) {
+    if (this->predefined_resources[i].total <= 0) {
+      continue;
+    }
+    if (first) {
+      first = false;
+    } else {
+      buffer << ", ";
+    }
+    std::string name = "";
+    switch (i) {
+    case CPU:
+      name = "CPU";
+      break;
+    case MEM:
+      name = "memory";
+      break;
+    case GPU:
+      name = "GPU";
+      break;
+    case OBJECT_STORE_MEM:
+      name = "object_store_memory";
+      break;
+    default:
+      RAY_CHECK(false) << "This should never happen.";
+      break;
+    }
+    buffer << format_resource(name, this->predefined_resources[i].available.Double())
+           << "/";
+    buffer << format_resource(name, this->predefined_resources[i].total.Double());
+    buffer << " " << name;
+  }
+  for (auto it = this->custom_resources.begin(); it != this->custom_resources.end();
+       ++it) {
+    auto name = string_to_in_map.Get(it->first);
+    buffer << ", " << format_resource(name, it->second.available.Double()) << "/"
+           << format_resource(name, it->second.total.Double());
+    buffer << " " << name;
   }
   buffer << "}" << std::endl;
   return buffer.str();
@@ -276,8 +332,8 @@ std::string NodeResourceInstances::DebugString(StringIdMap string_to_int_map) co
     case GPU:
       buffer << "GPU: ";
       break;
-    case TPU:
-      buffer << "TPU: ";
+    case OBJECT_STORE_MEM:
+      buffer << "OBJECT_STORE_MEM: ";
       break;
     default:
       RAY_CHECK(false) << "This should never happen.";
@@ -288,8 +344,7 @@ std::string NodeResourceInstances::DebugString(StringIdMap string_to_int_map) co
   }
   for (auto it = this->custom_resources.begin(); it != this->custom_resources.end();
        ++it) {
-    buffer << "\t" << string_to_int_map.Get(it->first) << ":("
-           << VectorToString(it->second.total) << ":"
+    buffer << "\t" << it->first << ":(" << VectorToString(it->second.total) << ":"
            << VectorToString(it->second.available) << ")\n";
   }
   buffer << "}" << std::endl;
@@ -310,6 +365,20 @@ TaskResourceInstances NodeResourceInstances::GetAvailableResourceInstances() {
 
   return task_resources;
 };
+
+bool TaskRequest::IsEmpty() const {
+  for (size_t i = 0; i < this->predefined_resources.size(); i++) {
+    if (this->predefined_resources[i].demand != 0) {
+      return false;
+    }
+  }
+  for (size_t i = 0; i < this->custom_resources.size(); i++) {
+    if (this->custom_resources[i].demand != 0) {
+      return false;
+    }
+  }
+  return true;
+}
 
 std::string TaskRequest::DebugString() const {
   std::stringstream buffer;

@@ -23,7 +23,7 @@
 #include "absl/container/flat_hash_map.h"
 #include "ray/common/id.h"
 #include "ray/common/status.h"
-#include "ray/gcs/redis_gcs_client.h"
+#include "ray/gcs/gcs_client.h"
 #include "ray/object_manager/format/object_manager_generated.h"
 #include "ray/object_manager/object_directory.h"
 #include "ray/rpc/worker/core_worker_client.h"
@@ -37,10 +37,11 @@ class OwnershipBasedObjectDirectory : public ObjectDirectory {
   ///
   /// \param io_service The event loop to dispatch callbacks to. This should
   /// usually be the same event loop that the given gcs_client runs on.
-  /// \param gcs_client A Ray GCS client to request object and client
+  /// \param gcs_client A Ray GCS client to request object and node
   /// information from.
   OwnershipBasedObjectDirectory(boost::asio::io_service &io_service,
-                                std::shared_ptr<gcs::GcsClient> &gcs_client);
+                                std::shared_ptr<gcs::GcsClient> &gcs_client,
+                                std::function<void(const ObjectID &)> mark_as_failed);
 
   virtual ~OwnershipBasedObjectDirectory() {}
 
@@ -56,10 +57,10 @@ class OwnershipBasedObjectDirectory : public ObjectDirectory {
                                          const ObjectID &object_id) override;
 
   ray::Status ReportObjectAdded(
-      const ObjectID &object_id, const NodeID &client_id,
+      const ObjectID &object_id, const NodeID &node_id,
       const object_manager::protocol::ObjectInfoT &object_info) override;
   ray::Status ReportObjectRemoved(
-      const ObjectID &object_id, const NodeID &client_id,
+      const ObjectID &object_id, const NodeID &node_id,
       const object_manager::protocol::ObjectInfoT &object_info) override;
 
   std::string DebugString() const override;
@@ -70,6 +71,8 @@ class OwnershipBasedObjectDirectory : public ObjectDirectory {
  private:
   /// The client call manager used to create the RPC clients.
   rpc::ClientCallManager client_call_manager_;
+  /// The callback used to mark an object as failed.
+  std::function<void(const ObjectID &)> mark_as_failed_;
   /// Cache of gRPC clients to workers (not necessarily running on this node).
   /// Also includes the number of inflight requests to each worker - when this
   /// reaches zero, the client will be deleted and a new one will need to be created

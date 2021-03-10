@@ -1,3 +1,4 @@
+from ray.utils import get_function_args
 from ray.tune.schedulers.trial_scheduler import TrialScheduler, FIFOScheduler
 from ray.tune.schedulers.hyperband import HyperBandScheduler
 from ray.tune.schedulers.hb_bohb import HyperBandForBOHB
@@ -6,6 +7,13 @@ from ray.tune.schedulers.async_hyperband import (AsyncHyperBandScheduler,
 from ray.tune.schedulers.median_stopping_rule import MedianStoppingRule
 from ray.tune.schedulers.pbt import (PopulationBasedTraining,
                                      PopulationBasedTrainingReplay)
+
+
+def _pb2_importer(*args, **kwargs):
+    # PB2 introduces a GPy dependency which can be expensive, so we import
+    # lazily.
+    from ray.tune.schedulers.pb2 import PB2
+    return PB2(*args, **kwargs)
 
 
 def create_scheduler(
@@ -37,6 +45,7 @@ def create_scheduler(
         "hb_bohb": HyperBandForBOHB,
         "pbt": PopulationBasedTraining,
         "pbt_replay": PopulationBasedTrainingReplay,
+        "pb2": _pb2_importer,
     }
     scheduler = scheduler.lower()
     if scheduler not in SCHEDULER_IMPORT:
@@ -45,7 +54,11 @@ def create_scheduler(
             f"Got: {scheduler}")
 
     SchedulerClass = SCHEDULER_IMPORT[scheduler]
-    return SchedulerClass(**kwargs)
+
+    scheduler_args = get_function_args(SchedulerClass)
+    trimmed_kwargs = {k: v for k, v in kwargs.items() if k in scheduler_args}
+
+    return SchedulerClass(**trimmed_kwargs)
 
 
 __all__ = [

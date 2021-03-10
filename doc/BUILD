@@ -3,19 +3,19 @@
 # Please keep these sorted alphabetically, but start with the
 # root directory.
 # --------------------------------------------------------------------
-py_test(
-    name = "plot_hyperparameter",
-    size = "small",
-    srcs = ["examples/plot_hyperparameter.py"],
-    tags = ["exclusive"]
-)
+# py_test(
+#     name = "plot_hyperparameter",
+#     size = "small",
+#     srcs = ["examples/plot_hyperparameter.py"],
+#     tags = ["exclusive"]
+# )
 
-py_test(
-    name = "plot_parameter_server",
-    size = "medium",
-    srcs = ["examples/plot_parameter_server.py"],
-    tags = ["exclusive"]
-)
+# py_test(
+#     name = "plot_parameter_server",
+#     size = "medium",
+#     srcs = ["examples/plot_parameter_server.py"],
+#     tags = ["exclusive"]
+# )
 
 py_test(
     name = "plot_pong_example",
@@ -54,20 +54,20 @@ py_test(
 # Please keep these sorted alphabetically.
 # --------------------------------------------------------------------
 
-# py_test(
-#     name = "tune_sklearn",
-#     size = "medium",
-#     main = "source/tune/_tutorials/tune-sklearn.py",
-#     srcs = ["source/tune/_tutorials/tune-sklearn.py"],
-#     tags = ["exclusive", "example"],
-#     args = ["--smoke-test"]
-# )
-
 py_test(
-    name = "tune_serve_integration_mnist",
+    name = "tune_sklearn",
     size = "medium",
-    main = "source/tune/_tutorials/tune-serve-integration-mnist.py",
-    srcs = ["source/tune/_tutorials/tune-serve-integration-mnist.py"],
+    main = "source/tune/_tutorials/tune-sklearn.py",
+    srcs = ["source/tune/_tutorials/tune-sklearn.py"],
     tags = ["exclusive", "example"],
-    args = ["--smoke-test", "--from_scratch", "--day 0"]
+    args = ["--smoke-test"]
 )
+
+# py_test(
+#     name = "tune_serve_integration_mnist",
+#     size = "medium",
+#     main = "source/tune/_tutorials/tune-serve-integration-mnist.py",
+#     srcs = ["source/tune/_tutorials/tune-serve-integration-mnist.py"],
+#     tags = ["exclusive", "example"],
+#     args = ["--smoke-test", "--from_scratch", "--day 0"]
+# )

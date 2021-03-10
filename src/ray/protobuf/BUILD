@@ -40,7 +40,10 @@ python_grpc_compile(
 proto_library(
     name = "node_manager_proto",
     srcs = ["node_manager.proto"],
-    deps = [":common_proto"],
+    deps = [
+      ":common_proto",
+      ":gcs_proto",
+    ],
 )
 
 cc_proto_library(
@@ -153,5 +156,17 @@ python_grpc_compile(
 cc_proto_library(
     name = "agent_manager_cc_proto",
     deps = [":agent_manager_proto"],
+)
+
+# Ray Client gRPC lib
+proto_library(
+    name = "ray_client_proto",
+    srcs = ["ray_client.proto"],
+    deps = [],
+)
+
+python_grpc_compile(
+    name = "ray_client_py_proto",
+    deps = [":ray_client_proto"]
 )
 
