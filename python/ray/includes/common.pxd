@@ -270,8 +270,7 @@ cdef extern from "ray/core_worker/common.h" nogil:
         CPlacementGroupCreationOptions(
             const c_string &name,
             CPlacementStrategy strategy,
-            const c_vector[unordered_map[c_string, double]] &bundles,
-            c_bool is_detached
+            const c_vector[unordered_map[c_string, double]] &bundles
         )
 
 cdef extern from "ray/gcs/gcs_client.h" nogil:
@@ -279,7 +278,3 @@ cdef extern from "ray/gcs/gcs_client.h" nogil:
         CGcsClientOptions(const c_string &ip, int port,
                           const c_string &password,
                           c_bool is_test_client)
-
-cdef extern from "src/ray/protobuf/gcs.pb.h" nogil:
-    cdef cppclass CJobConfig "ray::rpc::JobConfig":
-        const c_string &SerializeAsString()

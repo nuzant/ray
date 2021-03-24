@@ -427,12 +427,8 @@ class AWSNodeProvider(NodeProvider):
         else:
             node.terminate()
 
-        # TODO (Alex): We are leaking the tag cache here. Naively, we would
-        # want to just remove the cache entry here, but terminating can be
-        # asyncrhonous or error, which would result in a use after free error.
-        # If this leak becomes bad, we can garbage collect the tag cache when
-        # the node cache is updated.
-        pass
+        self.tag_cache.pop(node_id, None)
+        self.tag_cache_pending.pop(node_id, None)
 
     def terminate_nodes(self, node_ids):
         if not node_ids:
@@ -466,6 +462,10 @@ class AWSNodeProvider(NodeProvider):
                 self.ec2.meta.client.terminate_instances(InstanceIds=spot_ids)
         else:
             self.ec2.meta.client.terminate_instances(InstanceIds=node_ids)
+
+        for node_id in node_ids:
+            self.tag_cache.pop(node_id, None)
+            self.tag_cache_pending.pop(node_id, None)
 
     def _get_node(self, node_id):
         """Refresh and get info for this node, updating the cache."""

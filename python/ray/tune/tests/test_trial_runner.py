@@ -1,7 +1,6 @@
 import os
 import sys
 import unittest
-from unittest.mock import patch
 
 import ray
 from ray.rllib import _register_all
@@ -18,10 +17,6 @@ from ray.tune.suggest import BasicVariantGenerator
 
 class TrialRunnerTest(unittest.TestCase):
     def setUp(self):
-        # Wait up to five seconds for placement groups when starting a trial
-        os.environ["TUNE_PLACEMENT_GROUP_WAIT_S"] = "5"
-        # Block for results even when placement groups are pending
-        os.environ["TUNE_TRIAL_STARTUP_GRACE_PERIOD"] = "0"
         _register_all()  # re-register the evicted objects
 
     def tearDown(self):
@@ -107,6 +102,7 @@ class TrialRunnerTest(unittest.TestCase):
         runner.step()
         self.assertEqual(trials[0].status, Trial.RUNNING)
         self.assertEqual(trials[1].status, Trial.PENDING)
+
         runner.step()
         self.assertEqual(trials[0].status, Trial.TERMINATED)
         self.assertEqual(trials[1].status, Trial.PENDING)
@@ -261,7 +257,6 @@ class TrialRunnerTest(unittest.TestCase):
 
     def testChangeResources(self):
         """Checks that resource requirements can be changed on fly."""
-        os.environ["TUNE_PLACEMENT_GROUP_AUTO_DISABLED"] = "1"
         ray.init(num_cpus=2)
 
         class ChangingScheduler(FIFOScheduler):
@@ -294,8 +289,6 @@ class TrialRunnerTest(unittest.TestCase):
         self.assertEqual(trials[0].status, Trial.RUNNING)
         self.assertEqual(runner.trial_executor._committed_resources.cpu, 2)
 
-    @patch("ray.tune.trial_runner.TUNE_MAX_PENDING_TRIALS_PG", 1)
-    @patch("ray.tune.utils.placement_groups.TUNE_MAX_PENDING_TRIALS_PG", 1)
     def testQueueFilling(self):
         ray.init(num_cpus=4)
 

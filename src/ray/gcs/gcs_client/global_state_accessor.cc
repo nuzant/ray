@@ -155,6 +155,27 @@ std::vector<std::string> GlobalStateAccessor::GetAllAvailableResources() {
   return available_resources;
 }
 
+std::string GlobalStateAccessor::GetInternalConfig() {
+  rpc::StoredConfig config_proto;
+  std::promise<void> promise;
+  auto on_done = [&config_proto, &promise](
+                     Status status,
+                     const boost::optional<std::unordered_map<std::string, std::string>>
+                         stored_raylet_config) {
+    RAY_CHECK_OK(status);
+    if (stored_raylet_config.has_value()) {
+      config_proto.mutable_config()->insert(stored_raylet_config->begin(),
+                                            stored_raylet_config->end());
+    }
+    promise.set_value();
+  };
+
+  RAY_CHECK_OK(gcs_client_->Nodes().AsyncGetInternalConfig(on_done));
+  promise.get_future().get();
+
+  return config_proto.SerializeAsString();
+}
+
 std::unique_ptr<std::string> GlobalStateAccessor::GetAllResourceUsage() {
   std::unique_ptr<std::string> resource_batch_data;
   std::promise<bool> promise;
@@ -234,18 +255,6 @@ std::unique_ptr<std::string> GlobalStateAccessor::GetPlacementGroupInfo(
   RAY_CHECK_OK(gcs_client_->PlacementGroups().AsyncGet(
       placement_group_id, TransformForOptionalItemCallback<rpc::PlacementGroupTableData>(
                               placement_group_table_data, promise)));
-  promise.get_future().get();
-  return placement_group_table_data;
-}
-
-std::unique_ptr<std::string> GlobalStateAccessor::GetPlacementGroupByName(
-    const std::string &placement_group_name) {
-  std::unique_ptr<std::string> placement_group_table_data;
-  std::promise<bool> promise;
-  RAY_CHECK_OK(gcs_client_->PlacementGroups().AsyncGetByName(
-      placement_group_name,
-      TransformForOptionalItemCallback<rpc::PlacementGroupTableData>(
-          placement_group_table_data, promise)));
   promise.get_future().get();
   return placement_group_table_data;
 }

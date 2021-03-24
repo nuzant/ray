@@ -200,26 +200,6 @@ Status ServiceBasedActorInfoAccessor::AsyncRegisterActor(
   return Status::OK();
 }
 
-Status ServiceBasedActorInfoAccessor::AsyncKillActor(
-    const ActorID &actor_id, bool force_kill, bool no_restart,
-    const ray::gcs::StatusCallback &callback) {
-  rpc::KillActorViaGcsRequest request;
-  request.set_actor_id(actor_id.Binary());
-  request.set_force_kill(force_kill);
-  request.set_no_restart(no_restart);
-  client_impl_->GetGcsRpcClient().KillActorViaGcs(
-      request, [callback](const Status &, const rpc::KillActorViaGcsReply &reply) {
-        if (callback) {
-          auto status =
-              reply.status().code() == (int)StatusCode::OK
-                  ? Status()
-                  : Status(StatusCode(reply.status().code()), reply.status().message());
-          callback(status);
-        }
-      });
-  return Status::OK();
-}
-
 Status ServiceBasedActorInfoAccessor::AsyncCreateActor(
     const ray::TaskSpecification &task_spec, const ray::gcs::StatusCallback &callback) {
   RAY_CHECK(task_spec.IsActorCreationTask() && callback);
@@ -295,7 +275,7 @@ Status ServiceBasedActorInfoAccessor::AsyncSubscribe(
     auto on_subscribe = [subscribe](const std::string &id, const std::string &data) {
       ActorTableData actor_data;
       actor_data.ParseFromString(data);
-      subscribe(ActorID::FromHex(id), actor_data);
+      subscribe(ActorID::FromBinary(actor_data.actor_id()), actor_data);
     };
     return client_impl_->GetGcsPubSub().Subscribe(ACTOR_CHANNEL, actor_id.Hex(),
                                                   on_subscribe, subscribe_done);
@@ -621,18 +601,39 @@ void ServiceBasedNodeInfoAccessor::AsyncResubscribe(bool is_pubsub_server_restar
   }
 }
 
+Status ServiceBasedNodeInfoAccessor::AsyncSetInternalConfig(
+    std::unordered_map<std::string, std::string> &config) {
+  rpc::SetInternalConfigRequest request;
+  request.mutable_config()->mutable_config()->insert(config.begin(), config.end());
+
+  client_impl_->GetGcsRpcClient().SetInternalConfig(
+      request, [](const Status &status, const rpc::SetInternalConfigReply &reply) {
+        if (!status.ok()) {
+          RAY_LOG(ERROR) << "Failed to set internal config: " << status.message();
+        }
+      });
+  return Status::OK();
+}
+
 Status ServiceBasedNodeInfoAccessor::AsyncGetInternalConfig(
-    const OptionalItemCallback<std::string> &callback) {
+    const OptionalItemCallback<std::unordered_map<std::string, std::string>> &callback) {
   rpc::GetInternalConfigRequest request;
   client_impl_->GetGcsRpcClient().GetInternalConfig(
       request,
       [callback](const Status &status, const rpc::GetInternalConfigReply &reply) {
+        boost::optional<std::unordered_map<std::string, std::string>> config;
         if (status.ok()) {
-          RAY_LOG(DEBUG) << "Fetched internal config: " << reply.config();
+          if (reply.has_config()) {
+            RAY_LOG(DEBUG) << "Fetched internal config: " << reply.config().DebugString();
+            config = std::unordered_map<std::string, std::string>(
+                reply.config().config().begin(), reply.config().config().end());
+          } else {
+            RAY_LOG(DEBUG) << "No internal config was stored.";
+          }
         } else {
           RAY_LOG(ERROR) << "Failed to get internal config: " << status.message();
         }
-        callback(status, reply.config());
+        callback(status, config);
       });
   return Status::OK();
 }
@@ -706,12 +707,6 @@ Status ServiceBasedNodeResourceInfoAccessor::AsyncUpdateResources(
 Status ServiceBasedNodeResourceInfoAccessor::AsyncReportResourceUsage(
     const std::shared_ptr<rpc::ResourcesData> &data_ptr, const StatusCallback &callback) {
   absl::MutexLock lock(&mutex_);
-  last_resource_usage_->SetAvailableResources(
-      ResourceSet(MapFromProtobuf(data_ptr->resources_available())));
-  last_resource_usage_->SetTotalResources(
-      ResourceSet(MapFromProtobuf(data_ptr->resources_total())));
-  last_resource_usage_->SetLoadResources(
-      ResourceSet(MapFromProtobuf(data_ptr->resource_load())));
   cached_resource_usage_.mutable_resources()->CopyFrom(*data_ptr);
   client_impl_->GetGcsRpcClient().ReportResourceUsage(
       cached_resource_usage_,
@@ -1414,13 +1409,12 @@ ServiceBasedPlacementGroupInfoAccessor::ServiceBasedPlacementGroupInfoAccessor(
     : client_impl_(client_impl) {}
 
 Status ServiceBasedPlacementGroupInfoAccessor::AsyncCreatePlacementGroup(
-    const ray::PlacementGroupSpecification &placement_group_spec,
-    const StatusCallback &callback) {
+    const ray::PlacementGroupSpecification &placement_group_spec) {
   rpc::CreatePlacementGroupRequest request;
   request.mutable_placement_group_spec()->CopyFrom(placement_group_spec.GetMessage());
   client_impl_->GetGcsRpcClient().CreatePlacementGroup(
-      request, [placement_group_spec, callback](
-                   const Status &, const rpc::CreatePlacementGroupReply &reply) {
+      request, [placement_group_spec](const Status &,
+                                      const rpc::CreatePlacementGroupReply &reply) {
         auto status =
             reply.status().code() == (int)StatusCode::OK
                 ? Status()
@@ -1432,9 +1426,6 @@ Status ServiceBasedPlacementGroupInfoAccessor::AsyncCreatePlacementGroup(
           RAY_LOG(ERROR) << "Placement group id = "
                          << placement_group_spec.PlacementGroupId()
                          << " failed to be registered. " << status;
-        }
-        if (callback) {
-          callback(status);
         }
       });
   return Status::OK();
@@ -1471,26 +1462,6 @@ Status ServiceBasedPlacementGroupInfoAccessor::AsyncGet(
         }
         RAY_LOG(DEBUG) << "Finished getting placement group info, placement group id = "
                        << placement_group_id;
-      });
-  return Status::OK();
-}
-
-Status ServiceBasedPlacementGroupInfoAccessor::AsyncGetByName(
-    const std::string &name,
-    const OptionalItemCallback<rpc::PlacementGroupTableData> &callback) {
-  RAY_LOG(DEBUG) << "Getting named placement group info, name = " << name;
-  rpc::GetNamedPlacementGroupRequest request;
-  request.set_name(name);
-  client_impl_->GetGcsRpcClient().GetNamedPlacementGroup(
-      request, [name, callback](const Status &status,
-                                const rpc::GetNamedPlacementGroupReply &reply) {
-        if (reply.has_placement_group_table_data()) {
-          callback(status, reply.placement_group_table_data());
-        } else {
-          callback(status, boost::none);
-        }
-        RAY_LOG(DEBUG) << "Finished getting named placement group info, status = "
-                       << status << ", name = " << name;
       });
   return Status::OK();
 }

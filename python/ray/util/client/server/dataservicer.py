@@ -3,13 +3,11 @@ import logging
 import grpc
 import sys
 
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING
 from threading import Lock
 
 import ray.core.generated.ray_client_pb2 as ray_client_pb2
 import ray.core.generated.ray_client_pb2_grpc as ray_client_pb2_grpc
-from ray.util.client import CURRENT_PROTOCOL_VERSION
-from ray._private.client_mode_hook import disable_client_hook
 
 if TYPE_CHECKING:
     from ray.util.client.server.server import RayletServicer
@@ -18,12 +16,10 @@ logger = logging.getLogger(__name__)
 
 
 class DataServicer(ray_client_pb2_grpc.RayletDataStreamerServicer):
-    def __init__(self, basic_service: "RayletServicer",
-                 ray_connect_handler: Callable):
+    def __init__(self, basic_service: "RayletServicer"):
         self.basic_service = basic_service
         self._clients_lock = Lock()
         self._num_clients = 0  # guarded by self._clients_lock
-        self.ray_connect_handler = ray_connect_handler
 
     def Datapath(self, request_iterator, context):
         metadata = {k: v for k, v in context.invocation_metadata()}
@@ -34,9 +30,6 @@ class DataServicer(ray_client_pb2_grpc.RayletDataStreamerServicer):
         logger.info(f"New data connection from client {client_id}")
         try:
             with self._clients_lock:
-                with disable_client_hook():
-                    if self._num_clients == 0 and not ray.is_initialized():
-                        self.ray_connect_handler()
                 self._num_clients += 1
             for req in request_iterator:
                 resp = None
@@ -57,8 +50,16 @@ class DataServicer(ray_client_pb2_grpc.RayletDataStreamerServicer):
                     resp = ray_client_pb2.DataResponse(
                         release=ray_client_pb2.ReleaseResponse(ok=released))
                 elif req_type == "connection_info":
-                    resp = ray_client_pb2.DataResponse(
-                        connection_info=self._build_connection_response())
+                    with self._clients_lock:
+                        cur_num_clients = self._num_clients
+                    info = ray_client_pb2.ConnectionInfoResponse(
+                        num_clients=cur_num_clients,
+                        python_version="{}.{}.{}".format(
+                            sys.version_info[0], sys.version_info[1],
+                            sys.version_info[2]),
+                        ray_version=ray.__version__,
+                        ray_commit=ray.__commit__)
+                    resp = ray_client_pb2.DataResponse(connection_info=info)
                 else:
                     raise Exception(f"Unreachable code: Request type "
                                     f"{req_type} not handled in Datapath")
@@ -69,21 +70,5 @@ class DataServicer(ray_client_pb2_grpc.RayletDataStreamerServicer):
         finally:
             logger.info(f"Lost data connection from client {client_id}")
             self.basic_service.release_all(client_id)
-
             with self._clients_lock:
                 self._num_clients -= 1
-
-            with disable_client_hook():
-                if self._num_clients == 0:
-                    ray.shutdown()
-
-    def _build_connection_response(self):
-        with self._clients_lock:
-            cur_num_clients = self._num_clients
-        return ray_client_pb2.ConnectionInfoResponse(
-            num_clients=cur_num_clients,
-            python_version="{}.{}.{}".format(
-                sys.version_info[0], sys.version_info[1], sys.version_info[2]),
-            ray_version=ray.__version__,
-            ray_commit=ray.__commit__,
-            protocol_version=CURRENT_PROTOCOL_VERSION)

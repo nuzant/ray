@@ -359,29 +359,22 @@ def get_node_id_for_actor(actor_handle):
     return ray.actors()[actor_handle._actor_id.hex()]["Address"]["NodeID"]
 
 
-def import_attr(full_path: str):
-    """Given a full import path to a module attr, return the imported attr.
+def import_class(full_path: str):
+    """Given a full import path to a class name, return the imported class.
 
     For example, the following are equivalent:
-        MyClass = import_attr("module.submodule.MyClass")
+        MyClass = import_class("module.submodule.MyClass")
         from module.submodule import MyClass
 
     Returns:
-        Imported attr
+        Imported class
     """
 
     last_period_idx = full_path.rfind(".")
-    attr_name = full_path[last_period_idx + 1:]
+    class_name = full_path[last_period_idx + 1:]
     module_name = full_path[:last_period_idx]
     module = importlib.import_module(module_name)
-    return getattr(module, attr_name)
-
-
-async def mock_imported_function(batch):
-    result = []
-    for request in batch:
-        result.append(await request.body())
-    return result
+    return getattr(module, class_name)
 
 
 class MockImportedBackend:
@@ -399,17 +392,11 @@ class MockImportedBackend:
     def reconfigure(self, config):
         self.config = config
 
-    def __call__(self, batch):
-        return [{
-            "arg": self.arg,
-            "config": self.config
-        } for _ in range(len(batch))]
+    def __call__(self, *args):
+        return {"arg": self.arg, "config": self.config}
 
-    async def other_method(self, batch):
-        responses = []
-        for request in batch:
-            responses.append(await request.body())
-        return responses
+    async def other_method(self, request):
+        return await request.body()
 
 
 def compute_iterable_delta(old: Iterable,
@@ -419,7 +406,7 @@ def compute_iterable_delta(old: Iterable,
     Usage:
         >>> old = {"a", "b"}
         >>> new = {"a", "d"}
-        >>> compute_iterable_delta(old, new)
+        >>> compute_dict_delta(old, new)
         ({"d"}, {"b"}, {"a"})
     """
     old_keys, new_keys = set(old), set(new)

@@ -414,19 +414,12 @@ class _CliLogger():
             record.levelname = _level_str
             rendered_message = self._formatter.format(record)
 
-        # We aren't using standard python logging convention, so we hardcode
-        # the log levels for now.
-        if _level_str in ["WARNING", "ERROR", "PANIC"]:
-            stream = sys.stderr
-        else:
-            stream = sys.stdout
-
         if not _linefeed:
-            stream.write(rendered_message)
-            stream.flush()
+            sys.stdout.write(rendered_message)
+            sys.stdout.flush()
             return
 
-        print(rendered_message, file=stream)
+        print(rendered_message)
 
     def indented(self):
         """Context manager that starts an indented block of output.

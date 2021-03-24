@@ -66,17 +66,8 @@ Raylet::Raylet(boost::asio::io_service &main_service, const std::string &socket_
       object_directory_(
           RayConfig::instance().ownership_based_object_directory_enabled()
               ? std::dynamic_pointer_cast<ObjectDirectoryInterface>(
-                    std::make_shared<OwnershipBasedObjectDirectory>(
-                        main_service, gcs_client_,
-
-                        [this](const ObjectID &obj_id) {
-                          rpc::ObjectReference ref;
-                          ref.set_object_id(obj_id.Binary());
-                          node_manager_.MarkObjectsAsFailed(
-                              ErrorType::OBJECT_UNRECONSTRUCTABLE, {ref}, JobID::Nil());
-                        }
-
-                        ))
+                    std::make_shared<OwnershipBasedObjectDirectory>(main_service,
+                                                                    gcs_client_))
               : std::dynamic_pointer_cast<ObjectDirectoryInterface>(
                     std::make_shared<ObjectDirectory>(main_service, gcs_client_))),
       object_manager_(
@@ -133,7 +124,6 @@ void Raylet::Start() {
 void Raylet::Stop() {
   object_manager_.Stop();
   RAY_CHECK_OK(gcs_client_->Nodes().UnregisterSelf());
-  node_manager_.Stop();
   acceptor_.close();
 }
 

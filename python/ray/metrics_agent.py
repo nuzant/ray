@@ -195,7 +195,6 @@ class PrometheusServiceDiscoveryWriter(threading.Thread):
         metrics_export_addresses = [
             "{}:{}".format(node["NodeManagerAddress"],
                            node["MetricsExportPort"]) for node in nodes
-            if node["alive"] is True
         ]
         return json.dumps([{
             "labels": {

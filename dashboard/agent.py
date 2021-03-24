@@ -159,7 +159,7 @@ class DashboardAgent(object):
         await runner.setup()
         site = aiohttp.web.TCPSite(runner, self.ip, 0)
         await site.start()
-        http_host, http_port, *_ = site._server.sockets[0].getsockname()
+        http_host, http_port = site._server.sockets[0].getsockname()
         logger.info("Dashboard agent http address: %s:%s", http_host,
                     http_port)
 
@@ -186,11 +186,8 @@ class DashboardAgent(object):
                 agent_port=self.grpc_port,
                 agent_ip_address=self.ip))
 
-        tasks = [m.run(self.server) for m in modules]
-        if sys.platform not in ["win32", "cygwin"]:
-            tasks.append(check_parent_task)
-        await asyncio.gather(*tasks)
-
+        await asyncio.gather(check_parent_task,
+                             *(m.run(self.server) for m in modules))
         await self.server.wait_for_termination()
         # Wait for finish signal.
         await runner.cleanup()

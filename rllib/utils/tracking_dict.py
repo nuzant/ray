@@ -18,7 +18,6 @@ class UsageTrackingDict(dict):
 
     def set_get_interceptor(self, fn):
         self.get_interceptor = fn
-        self.intercepted_values = {}
 
     def copy(self):
         copy = UsageTrackingDict(**dict.copy(self))
