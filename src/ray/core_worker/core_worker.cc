@@ -133,7 +133,7 @@ CoreWorkerProcess::CoreWorkerProcess(const CoreWorkerOptions &options)
     RAY_CHECK(options_.num_workers == 1);
   }
 
-  RAY_LOG(INFO) << "Constructing CoreWorkerProcess. pid: " << getpid();
+  RAY_LOG(INFO) << "Constructing CoreWorkerProcess. pid: " << getpid() << " PROOF THAT I MODIFIED THE SOURCE CODE";
 
   if (options_.num_workers == 1) {
     // We need to create the worker instance here if:
@@ -1113,11 +1113,14 @@ Status CoreWorker::Wait(const std::vector<ObjectID> &ids, int num_objects,
 
   absl::flat_hash_set<ObjectID> ready;
   int64_t start_time = current_time_ms();
+  int64_t start_time_us = current_sys_time_us();
   RAY_RETURN_NOT_OK(memory_store_->Wait(
       memory_object_ids,
       std::min(static_cast<int>(memory_object_ids.size()), num_objects), timeout_ms,
       worker_context_, &ready));
   RAY_CHECK(static_cast<int>(ready.size()) <= num_objects);
+  RAY_LOG(INFO) << "[Profile] object ready time: " << static_cast<int>(current_sys_time_us() - start_time_us) << " microseconds";
+
   if (timeout_ms > 0) {
     timeout_ms =
         std::max(0, static_cast<int>(timeout_ms - (current_time_ms() - start_time)));
@@ -1140,6 +1143,8 @@ Status CoreWorker::Wait(const std::vector<ObjectID> &ids, int num_objects,
       results->at(i) = true;
     }
   }
+
+  RAY_LOG(INFO) << "[Profile] total wait time: " << static_cast<int>(current_sys_time_us() - start_time_us) << " microseconds";
 
   return Status::OK();
 }

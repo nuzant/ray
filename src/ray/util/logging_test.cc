@@ -30,6 +30,14 @@ int64_t current_time_ms() {
   return ms_since_epoch.count();
 }
 
+// int64_t current_time_us() {
+//   std::chrono::microseconds us_since_epoch =
+//       std::chrono::duration_cast<std::chrono::microseconds>(
+//           std::chrono::high_resolution_clock::now().time_since_epoch());
+//   return us_since_epoch.count();
+// }
+
+
 // This is not really test.
 // This file just print some information using the logging macro.
 
